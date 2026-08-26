@@ -137,6 +137,3 @@ else:
     print(f"\n⚠ Pipeline completed with {failed_count} failure(s)")
     
 print(f"{'='*80}")
-
-# COMMAND ----------
-

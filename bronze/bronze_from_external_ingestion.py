@@ -33,9 +33,13 @@ import json
 import os
 from datetime import datetime
 from pyspark.sql.functions import *
+from pyspark.sql.types import *
 
 # Define the external ingestion data folder path
 data_folder = "/Workspace/Users/swapniltake1@outlook.com/CryptoStream-Real-Time-Market-Data-Engineering-Platform/external_ingestion/data/"
+
+# Control table to track processed files
+control_table = "main.crypto_bronze.processed_files_control"
 
 print(f"Looking for data files in: {data_folder}")
 print("=" * 60)
@@ -53,18 +57,58 @@ try:
         print("3. Re-run this notebook")
         raise FileNotFoundError("No JSON files in data folder")
     
-    print(f"✓ Found {len(json_files)} JSON file(s):\n")
-    for f in json_files:
+    print(f"✓ Found {len(json_files)} JSON file(s)\n")
+    
+    # Create control table if it doesn't exist
+    spark.sql(f"""
+        CREATE TABLE IF NOT EXISTS {control_table} (
+            file_name STRING,
+            file_path STRING,
+            file_size BIGINT,
+            file_modification_time TIMESTAMP,
+            processing_timestamp TIMESTAMP,
+            batch_id STRING,
+            record_count INT,
+            status STRING
+        )
+        USING DELTA
+    """)
+    
+    # Get list of already processed files
+    processed_files_df = spark.table(control_table).filter(col("status") == "SUCCESS")
+    processed_filenames = set([row.file_name for row in processed_files_df.select("file_name").collect()])
+    
+    print(f"📊 Already processed: {len(processed_filenames)} file(s)")
+    
+    # Filter out already processed files
+    new_files = [f for f in json_files if f.name not in processed_filenames]
+    
+    print(f"🆕 New files to process: {len(new_files)}")
+    print("=" * 60)
+    
+    if not new_files:
+        print("\n✓ No new files to process. All files have been ingested.")
+        print("\nAlready processed files:")
+        for fname in processed_filenames:
+            print(f"  ✓ {fname}")
+        dbutils.notebook.exit("No new files to process")
+    
+    # Display new files to be processed
+    print("\nNew files to process:")
+    for f in new_files:
         file_date = datetime.fromtimestamp(f.modificationTime/1000)
         print(f"  📄 {f.name}")
         print(f"     Size: {f.size:,} bytes")
         print(f"     Modified: {file_date}\n")
     
-    # Get the most recent file (sort manually to avoid PySpark max() conflict)
-    sorted_files = sorted(json_files, key=lambda f: f.modificationTime, reverse=True)
-    latest_file = sorted_files[0]
+    # Sort by modification time and get the oldest unprocessed file
+    # (Process files in chronological order)
+    sorted_files = sorted(new_files, key=lambda f: f.modificationTime)
+    file_to_process = sorted_files[0]
+    
     print("=" * 60)
-    print(f"📌 Processing latest file: {latest_file.name}")
+    print(f"📌 Processing file: {file_to_process.name}")
+    print(f"   (Processing oldest new file first)")
     print("=" * 60)
     
 except Exception as e:
@@ -75,7 +119,11 @@ except Exception as e:
 
 # DBTITLE 1,Read and parse JSON file
 # Read the JSON file content
-file_path = latest_file.path
+file_path = file_to_process.path
+file_name = file_to_process.name
+file_size = file_to_process.size
+file_mod_time = datetime.fromtimestamp(file_to_process.modificationTime/1000)
+
 print(f"Reading file: {file_path}\n")
 
 # Read the entire JSON file
@@ -186,6 +234,48 @@ print(f"\n✓ Successfully wrote {record_count} records to {bronze_table}")
 print(f"\nBatch ID: {metadata['batch_id']}")
 print(f"External Ingestion: {metadata['ingestion_timestamp']}")
 print(f"Bronze Processing: {datetime.now().isoformat()}")
+print("=" * 60)
+
+# COMMAND ----------
+
+# DBTITLE 1,Record processed file in control table
+# Record the file as successfully processed in control table
+from pyspark.sql.types import StructType, StructField, StringType, LongType, TimestampType, IntegerType
+
+control_record = [{
+    "file_name": file_name,
+    "file_path": file_path,
+    "file_size": file_size,
+    "file_modification_time": file_mod_time,
+    "processing_timestamp": datetime.now(),
+    "batch_id": metadata['batch_id'],
+    "record_count": len(data_records),
+    "status": "SUCCESS"
+}]
+
+control_schema = StructType([
+    StructField("file_name", StringType(), True),
+    StructField("file_path", StringType(), True),
+    StructField("file_size", LongType(), True),
+    StructField("file_modification_time", TimestampType(), True),
+    StructField("processing_timestamp", TimestampType(), True),
+    StructField("batch_id", StringType(), True),
+    StructField("record_count", IntegerType(), True),
+    StructField("status", StringType(), True)
+])
+
+control_df = spark.createDataFrame(control_record, schema=control_schema)
+
+control_df.write \
+    .format("delta") \
+    .mode("append") \
+    .saveAsTable(control_table)
+
+print("\n" + "=" * 60)
+print("✓ File recorded in control table")
+print(f"  Table: {control_table}")
+print(f"  File: {file_name}")
+print(f"  Status: SUCCESS")
 print("=" * 60)
 
 # COMMAND ----------
