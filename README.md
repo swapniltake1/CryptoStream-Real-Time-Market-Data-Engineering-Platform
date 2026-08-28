@@ -1,6 +1,6 @@
 # CryptoStream
 
-[![Python](https://img.shields.io/badge/Python-3.x-blue.svg)](https://www.python.org/) [![PySpark](https://img.shields.io/badge/PySpark-3.x-orange.svg)](https://spark.apache.org/docs/latest/api/python/) [![Databricks](https://img.shields.io/badge/Databricks-Lakehouse-red.svg)](https://www.databricks.com/) [![Delta Lake](https://img.shields.io/badge/Delta%20Lake-ACID-blue.svg)](https://delta.io/) [![Source: CoinGecko](https://img.shields.io/badge/Source-CoinGecko-green.svg)](https://www.coingecko.com/) [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Python](https://img.shields.io/badge/Python-3.x-blue.svg)](https://www.python.org/) [![PySpark](https://img.shields.io/badge/PySpark-3.x-orange.svg)](https://spark.apache.org/docs/latest/api/python)
 
 Professional, production-oriented data engineering platform for ingesting, validating, processing, and analyzing cryptocurrency market data using the CoinGecko API and a Databricks Lakehouse architecture.
 
@@ -17,6 +17,7 @@ Table of Contents
 - Getting Started
 - Configuration
 - Testing & CI
+- Documentation
 - Contributing
 - License & Author
 
@@ -24,7 +25,7 @@ Table of Contents
 
 ## Project Overview
 
-CryptoStream is an enterprise-style, metadata-driven data engineering platform that converts continuous cryptocurrency market feeds into reliable, analytics-ready datasets. It is designed for scalability, maintainability, data quality, and operational observability.
+CryptoStream is an enterprise-style, metadata-driven data engineering platform that converts continuous cryptocurrency market feeds into reliable, analytics-ready datasets. It is designed for scalability, observability, and production-grade data governance.
 
 Primary goals:
 - Ingest market data from CoinGecko reliably
@@ -32,6 +33,26 @@ Primary goals:
 - Enforce schema and validation rules
 - Provide idempotent, incremental updates into Delta Lake
 - Expose business-ready Gold tables for analytics and dashboards
+
+---
+
+## Documentation
+
+Comprehensive technical documentation for CryptoStream is available in the `CryptoStream_Documentation/docs/` folder. It contains design, operational, and runbook material that complements the repository code.
+
+Key documents (in `CryptoStream_Documentation/docs/`):
+- `architecture.md` — architecture and component responsibilities
+- `data_dictionary.md` — Bronze/Silver/Gold/control-table definitions
+- `pipeline_design.md` — pipeline contracts, dependencies and idempotency
+- `data_quality.md` — validation, reconciliation and quality gates
+- `deployment_guide.md` — local and Databricks setup
+- `testing_strategy.md` — unit, integration and data-quality testing
+- `monitoring_alerting.md` — operational monitoring and alerting
+- `security_configuration.md` — configuration, secrets and governance
+- `troubleshooting_runbook.md` — operational troubleshooting
+- `project_operations.md` — run/release/interview checklists
+
+Refer to `CryptoStream_Documentation/docs/README.md` for an index and guidance on which documents to read first.
 
 ---
 
@@ -191,7 +212,8 @@ CryptoStream/
 ├── notebooks/
 ├── sql/
 ├── tests/
-└── docs/
+├── docs/
+└── CryptoStream_Documentation/
 ```
 
 ---
