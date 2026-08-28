@@ -2,6 +2,8 @@
 
 [![Python](https://img.shields.io/badge/Python-3.x-blue.svg)](https://www.python.org/) [![PySpark](https://img.shields.io/badge/PySpark-3.x-orange.svg)](https://spark.apache.org/docs/latest/api/python)
 
+[![Docs](https://img.shields.io/badge/Docs-CryptoStream_Documentation-blue)](https://github.com/swapniltake1/CryptoStream-Real-Time-Market-Data-Engineering-Platform/blob/main/CryptoStream_Documentation/docs/README.md)
+
 Professional, production-oriented data engineering platform for ingesting, validating, processing, and analyzing cryptocurrency market data using the CoinGecko API and a Databricks Lakehouse architecture.
 
 ---
@@ -40,19 +42,23 @@ Primary goals:
 
 Comprehensive technical documentation for CryptoStream is available in the `CryptoStream_Documentation/docs/` folder. It contains design, operational, and runbook material that complements the repository code.
 
-Key documents (in `CryptoStream_Documentation/docs/`):
-- `architecture.md` — architecture and component responsibilities
-- `data_dictionary.md` — Bronze/Silver/Gold/control-table definitions
-- `pipeline_design.md` — pipeline contracts, dependencies and idempotency
-- `data_quality.md` — validation, reconciliation and quality gates
-- `deployment_guide.md` — local and Databricks setup
-- `testing_strategy.md` — unit, integration and data-quality testing
-- `monitoring_alerting.md` — operational monitoring and alerting
-- `security_configuration.md` — configuration, secrets and governance
-- `troubleshooting_runbook.md` — operational troubleshooting
-- `project_operations.md` — run/release/interview checklists
+Documentation index: https://github.com/swapniltake1/CryptoStream-Real-Time-Market-Data-Engineering-Platform/blob/main/CryptoStream_Documentation/docs/README.md
 
-Refer to `CryptoStream_Documentation/docs/README.md` for an index and guidance on which documents to read first.
+Direct links to key documents (permalinks):
+
+- [Architecture](https://github.com/swapniltake1/CryptoStream-Real-Time-Market-Data-Engineering-Platform/blob/main/CryptoStream_Documentation/docs/architecture.md)
+- [Data dictionary](https://github.com/swapniltake1/CryptoStream-Real-Time-Market-Data-Engineering-Platform/blob/main/CryptoStream_Documentation/docs/data_dictionary.md)
+- [Pipeline design](https://github.com/swapniltake1/CryptoStream-Real-Time-Market-Data-Engineering-Platform/blob/main/CryptoStream_Documentation/docs/pipeline_design.md)
+- [Data quality](https://github.com/swapniltake1/CryptoStream-Real-Time-Market-Data-Engineering-Platform/blob/main/CryptoStream_Documentation/docs/data_quality.md)
+- [Deployment guide](https://github.com/swapniltake1/CryptoStream-Real-Time-Market-Data-Engineering-Platform/blob/main/CryptoStream_Documentation/docs/deployment_guide.md)
+- [Testing strategy](https://github.com/swapniltake1/CryptoStream-Real-Time-Market-Data-Engineering-Platform/blob/main/CryptoStream_Documentation/docs/testing_strategy.md)
+- [Monitoring & alerting](https://github.com/swapniltake1/CryptoStream-Real-Time-Market-Data-Engineering-Platform/blob/main/CryptoStream_Documentation/docs/monitoring_alerting.md)
+- [Security configuration](https://github.com/swapniltake1/CryptoStream-Real-Time-Market-Data-Engineering-Platform/blob/main/CryptoStream_Documentation/docs/security_configuration.md)
+- [Troubleshooting runbook](https://github.com/swapniltake1/CryptoStream-Real-Time-Market-Data-Engineering-Platform/blob/main/CryptoStream_Documentation/docs/troubleshooting_runbook.md)
+- [Project operations](https://github.com/swapniltake1/CryptoStream-Real-Time-Market-Data-Engineering-Platform/blob/main/CryptoStream_Documentation/docs/project_operations.md)
+- [File tracking mechanism](https://github.com/swapniltake1/CryptoStream-Real-Time-Market-Data-Engineering-Platform/blob/main/CryptoStream_Documentation/docs/file_tracking_mechanism.md)
+
+Published site (after first deploy): https://swapniltake1.github.io/CryptoStream-Real-Time-Market-Data-Engineering-Platform/
 
 ---
 
