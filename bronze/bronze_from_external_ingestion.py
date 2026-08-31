@@ -28,6 +28,62 @@
 
 # COMMAND ----------
 
+# DBTITLE 1,Setup Logger
+import logging
+import sys
+from datetime import datetime
+
+# Configure logger
+class CustomFormatter(logging.Formatter):
+    """Custom formatter with colors for different log levels"""
+    
+    grey = "\x1b[38;21m"
+    blue = "\x1b[38;5;39m"
+    yellow = "\x1b[38;5;226m"
+    red = "\x1b[38;5;196m"
+    bold_red = "\x1b[31;1m"
+    reset = "\x1b[0m"
+    
+    FORMATS = {
+        logging.DEBUG: grey + "%(asctime)s - %(name)s - %(levelname)s - %(message)s" + reset,
+        logging.INFO: blue + "%(asctime)s - %(name)s - %(levelname)s - %(message)s" + reset,
+        logging.WARNING: yellow + "%(asctime)s - %(name)s - %(levelname)s - %(message)s" + reset,
+        logging.ERROR: red + "%(asctime)s - %(name)s - %(levelname)s - %(message)s" + reset,
+        logging.CRITICAL: bold_red + "%(asctime)s - %(name)s - %(levelname)s - %(message)s" + reset
+    }
+    
+    def format(self, record):
+        log_fmt = self.FORMATS.get(record.levelno)
+        formatter = logging.Formatter(log_fmt, datefmt='%Y-%m-%d %H:%M:%S')
+        return formatter.format(record)
+
+# Create logger
+logger = logging.getLogger('BronzeIngestion')
+logger.setLevel(logging.DEBUG)
+
+# Remove existing handlers
+if logger.handlers:
+    logger.handlers.clear()
+
+# Create console handler
+console_handler = logging.StreamHandler(sys.stdout)
+console_handler.setLevel(logging.DEBUG)
+console_handler.setFormatter(CustomFormatter())
+
+# Add handler to logger
+logger.addHandler(console_handler)
+
+# Log pipeline start
+logger.info("="*70)
+logger.info("BRONZE LAYER INGESTION - EXTERNAL DATA SOURCE")
+logger.info("="*70)
+logger.info(f"Pipeline started at: {datetime.now().isoformat()}")
+logger.info("Logger initialized successfully")
+
+print("\n✓ Logger configured and ready")
+
+# COMMAND ----------
+
 # DBTITLE 1,Define data location and list files
 import json
 import os
@@ -35,21 +91,29 @@ from datetime import datetime
 from pyspark.sql.functions import *
 from pyspark.sql.types import *
 
+logger.info("STEP 1: Discovering data files")
+logger.info("-" * 70)
+
 # Define the external ingestion data folder path
 data_folder = "/Workspace/Users/swapniltake1@outlook.com/CryptoStream-Real-Time-Market-Data-Engineering-Platform/external_ingestion/data/"
+logger.debug(f"Data folder path: {data_folder}")
 
 # Control table to track processed files
 control_table = "main.crypto_bronze.processed_files_control"
+logger.debug(f"Control table: {control_table}")
 
 print(f"Looking for data files in: {data_folder}")
 print("=" * 60)
 
 # List all JSON files in the folder
 try:
+    logger.info("Scanning for JSON files...")
     files = dbutils.fs.ls(data_folder)
     json_files = [f for f in files if f.name.endswith('.json')]
+    logger.debug(f"Found {len(files)} total files, {len(json_files)} JSON files")
     
     if not json_files:
+        logger.error("No JSON files found in data folder")
         print("❌ No JSON files found!")
         print("\nTo generate data:")
         print("1. Run the coingecko_ingestion.py script on your local machine")
@@ -57,9 +121,11 @@ try:
         print("3. Re-run this notebook")
         raise FileNotFoundError("No JSON files in data folder")
     
+    logger.info(f"Found {len(json_files)} JSON file(s)")
     print(f"✓ Found {len(json_files)} JSON file(s)\n")
     
     # Create control table if it doesn't exist
+    logger.info("Ensuring control table exists...")
     spark.sql(f"""
         CREATE TABLE IF NOT EXISTS {control_table} (
             file_name STRING,
@@ -73,24 +139,30 @@ try:
         )
         USING DELTA
     """)
+    logger.debug(f"Control table ready: {control_table}")
     
     # Get list of already processed files
+    logger.info("Checking for already processed files...")
     processed_files_df = spark.table(control_table).filter(col("status") == "SUCCESS")
     processed_filenames = set([row.file_name for row in processed_files_df.select("file_name").collect()])
+    logger.info(f"Already processed: {len(processed_filenames)} file(s)")
     
     print(f"📊 Already processed: {len(processed_filenames)} file(s)")
     
     # Filter out already processed files
     new_files = [f for f in json_files if f.name not in processed_filenames]
+    logger.info(f"New files to process: {len(new_files)}")
     
     print(f"🆕 New files to process: {len(new_files)}")
     print("=" * 60)
     
     if not new_files:
+        logger.info("No new files to process - all files already ingested")
         print("\n✓ No new files to process. All files have been ingested.")
         print("\nAlready processed files:")
         for fname in processed_filenames:
             print(f"  ✓ {fname}")
+        logger.info("Pipeline execution completed - no new data to process")
         dbutils.notebook.exit("No new files to process")
     
     # Display new files to be processed
@@ -100,11 +172,15 @@ try:
         print(f"  📄 {f.name}")
         print(f"     Size: {f.size:,} bytes")
         print(f"     Modified: {file_date}\n")
+        logger.debug(f"New file: {f.name} ({f.size:,} bytes)")
     
     # Sort by modification time and get the oldest unprocessed file
     # (Process files in chronological order)
     sorted_files = sorted(new_files, key=lambda f: f.modificationTime)
     file_to_process = sorted_files[0]
+    logger.info(f"Selected file for processing: {file_to_process.name}")
+    logger.debug(f"File size: {file_to_process.size:,} bytes")
+    logger.debug(f"File modified: {datetime.fromtimestamp(file_to_process.modificationTime/1000)}")
     
     print("=" * 60)
     print(f"📌 Processing file: {file_to_process.name}")
@@ -112,209 +188,382 @@ try:
     print("=" * 60)
     
 except Exception as e:
+    logger.error(f"Failed to list or process files: {str(e)}", exc_info=True)
     print(f"❌ Error listing files: {e}")
     raise
 
 # COMMAND ----------
 
 # DBTITLE 1,Read and parse JSON file
+logger.info("STEP 2: Reading and parsing JSON file")
+logger.info("-" * 70)
+
 # Read the JSON file content
 file_path = file_to_process.path
 file_name = file_to_process.name
 file_size = file_to_process.size
 file_mod_time = datetime.fromtimestamp(file_to_process.modificationTime/1000)
 
+logger.debug(f"File path: {file_path}")
+logger.debug(f"File name: {file_name}")
+logger.debug(f"File size: {file_size:,} bytes")
 print(f"Reading file: {file_path}\n")
 
 # Read the entire JSON file
-file_content = spark.read.text(file_path, wholetext=True).collect()[0][0]
-json_payload = json.loads(file_content)
-
-# Extract metadata
-metadata = json_payload['metadata']
-print("📋 File Metadata:")
-print("=" * 60)
-print(f"Project Name       : {metadata['project_name']}")
-print(f"Source System      : {metadata['source_system']}")
-print(f"Batch ID           : {metadata['batch_id']}")
-print(f"Ingestion Time     : {metadata['ingestion_timestamp']}")
-print(f"Target Currency    : {metadata['target_currency']}")
-print(f"Record Count       : {metadata['record_count']}")
-print("=" * 60)
-
-# Extract the data array
-data_records = json_payload['data']
-print(f"\n✓ Extracted {len(data_records)} cryptocurrency records")
+logger.info("Reading JSON file content...")
+try:
+    file_content = spark.read.text(file_path, wholetext=True).collect()[0][0]
+    logger.debug(f"File content length: {len(file_content)} characters")
+    
+    logger.info("Parsing JSON payload...")
+    json_payload = json.loads(file_content)
+    logger.debug("JSON payload parsed successfully")
+    
+    # Extract metadata
+    metadata = json_payload['metadata']
+    logger.info("Extracted metadata from JSON payload")
+    logger.debug(f"Metadata keys: {list(metadata.keys())}")
+    
+    print("📋 File Metadata:")
+    print("=" * 60)
+    print(f"Project Name       : {metadata['project_name']}")
+    print(f"Source System      : {metadata['source_system']}")
+    print(f"Batch ID           : {metadata['batch_id']}")
+    print(f"Ingestion Time     : {metadata['ingestion_timestamp']}")
+    print(f"Target Currency    : {metadata['target_currency']}")
+    print(f"Record Count       : {metadata['record_count']}")
+    print("=" * 60)
+    
+    logger.info(f"Batch ID: {metadata['batch_id']}")
+    logger.info(f"Source System: {metadata['source_system']}")
+    logger.info(f"Expected record count: {metadata['record_count']}")
+    
+    # Extract the data array
+    data_records = json_payload['data']
+    logger.info(f"Extracted {len(data_records)} cryptocurrency records")
+    
+    if len(data_records) != metadata['record_count']:
+        logger.warning(f"Record count mismatch! Metadata: {metadata['record_count']}, Actual: {len(data_records)}")
+    
+    print(f"\n✓ Extracted {len(data_records)} cryptocurrency records")
+    
+except json.JSONDecodeError as e:
+    logger.error(f"JSON parsing error: {str(e)}", exc_info=True)
+    raise
+except KeyError as e:
+    logger.error(f"Missing expected key in JSON: {str(e)}", exc_info=True)
+    raise
+except Exception as e:
+    logger.error(f"Error reading or parsing JSON file: {str(e)}", exc_info=True)
+    raise
 
 # COMMAND ----------
 
 # DBTITLE 1,Create DataFrame from data
+logger.info("STEP 3: Creating Spark DataFrame from data")
+logger.info("-" * 70)
+
 # Create Spark DataFrame by writing temp JSON and reading back
 # (Serverless compute workaround - no SparkContext, no local filesystem)
 
 # Create a temporary workspace path for JSON lines
 temp_json_dir = f"/Workspace/Users/swapniltake1@outlook.com/CryptoStream-Real-Time-Market-Data-Engineering-Platform/.temp/json_{metadata['batch_id']}"
+logger.debug(f"Temporary directory: {temp_json_dir}")
 
-# Write JSON records as newline-delimited JSON
-json_content = '\n'.join([json.dumps(record) for record in data_records])
-dbutils.fs.put(temp_json_dir + "/data.json", json_content, overwrite=True)
-
-# Read using Spark's JSON reader (handles schema inference properly)
-df_temp = spark.read.json(temp_json_dir)
-
-# Collect all data into memory before cleaning up temp files
-collected_data = df_temp.collect()
-col_count = len(df_temp.columns)
-
-# Clean up temporary file
-dbutils.fs.rm(temp_json_dir, recurse=True)
-
-# Recreate DataFrame from collected data
-df_raw = spark.createDataFrame(collected_data, schema=df_temp.schema)
-row_count = len(collected_data)
-
-print(f"\n✓ Created DataFrame with {row_count} rows and {col_count} columns")
-print("\nSchema:")
-df_raw.printSchema()
-
-print("\n📊 Sample Records:")
-display(df_raw.limit(5))
+try:
+    logger.info("Converting records to newline-delimited JSON...")
+    # Write JSON records as newline-delimited JSON
+    json_content = '\n'.join([json.dumps(record) for record in data_records])
+    logger.debug(f"JSON content size: {len(json_content)} characters")
+    
+    logger.info("Writing temporary JSON file...")
+    dbutils.fs.put(temp_json_dir + "/data.json", json_content, overwrite=True)
+    logger.debug("Temporary file written successfully")
+    
+    # Read using Spark's JSON reader (handles schema inference properly)
+    logger.info("Reading JSON with Spark's JSON reader for schema inference...")
+    df_temp = spark.read.json(temp_json_dir)
+    
+    # Collect all data into memory before cleaning up temp files
+    logger.info("Collecting DataFrame data into memory...")
+    collected_data = df_temp.collect()
+    col_count = len(df_temp.columns)
+    logger.debug(f"Collected {len(collected_data)} rows, {col_count} columns")
+    
+    # Clean up temporary file
+    logger.info("Cleaning up temporary files...")
+    dbutils.fs.rm(temp_json_dir, recurse=True)
+    logger.debug("Temporary files removed")
+    
+    # Recreate DataFrame from collected data
+    logger.info("Recreating DataFrame from collected data...")
+    df_raw = spark.createDataFrame(collected_data, schema=df_temp.schema)
+    row_count = len(collected_data)
+    
+    logger.info(f"DataFrame created: {row_count} rows, {col_count} columns")
+    logger.debug(f"Schema: {df_raw.schema}")
+    
+    print(f"\n✓ Created DataFrame with {row_count} rows and {col_count} columns")
+    print("\nSchema:")
+    df_raw.printSchema()
+    
+    print("\n📊 Sample Records:")
+    display(df_raw.limit(5))
+    
+except Exception as e:
+    logger.error(f"Error creating DataFrame: {str(e)}", exc_info=True)
+    # Try to clean up temp dir even on error
+    try:
+        dbutils.fs.rm(temp_json_dir, recurse=True)
+        logger.debug("Cleaned up temporary files after error")
+    except:
+        pass
+    raise
 
 # COMMAND ----------
 
 # DBTITLE 1,Add Bronze layer metadata
-# Add bronze layer metadata columns
-df_bronze = (
-    df_raw
-    .withColumn("batch_id", lit(metadata['batch_id']))
-    .withColumn("external_ingestion_timestamp", lit(metadata['ingestion_timestamp']).cast("timestamp"))
-    .withColumn("bronze_ingestion_timestamp", current_timestamp())
-    .withColumn("ingestion_date", current_timestamp().cast("date"))
-    .withColumn("source_system", lit(metadata['source_system']))
-    .withColumn("source_endpoint", lit(metadata['source_endpoint']))
-    .withColumn("target_currency", lit(metadata['target_currency']))
-    .withColumn("source_file", lit(latest_file.name))
-    .withColumn("processing_timestamp", current_timestamp())
-)
+logger.info("STEP 4: Adding Bronze layer metadata")
+logger.info("-" * 70)
 
-print("✓ Added bronze layer metadata columns")
-print(f"\nTotal columns: {len(df_bronze.columns)}")
-print(f"\nBronze DataFrame columns:")
-for col in df_bronze.columns:
-    print(f"  • {col}")
-
-# Show sample with metadata
-print("\n📊 Sample with Metadata:")
-display(df_bronze.select(
-    "id", "name", "symbol", "current_price", "market_cap",
-    "batch_id", "bronze_ingestion_timestamp", "source_file"
-).limit(5))
+try:
+    logger.info("Enriching DataFrame with Bronze layer metadata...")
+    
+    # Add bronze layer metadata columns
+    df_bronze = (
+        df_raw
+        .withColumn("batch_id", lit(metadata['batch_id']))
+        .withColumn("external_ingestion_timestamp", lit(metadata['ingestion_timestamp']).cast("timestamp"))
+        .withColumn("bronze_ingestion_timestamp", current_timestamp())
+        .withColumn("ingestion_date", current_timestamp().cast("date"))
+        .withColumn("source_system", lit(metadata['source_system']))
+        .withColumn("source_endpoint", lit(metadata['source_endpoint']))
+        .withColumn("target_currency", lit(metadata['target_currency']))
+        .withColumn("source_file", lit(file_to_process.name))
+        .withColumn("processing_timestamp", current_timestamp())
+    )
+    
+    logger.info("Bronze metadata columns added successfully")
+    logger.debug(f"Total columns: {len(df_bronze.columns)}")
+    logger.debug(f"Added metadata: batch_id, timestamps, source info")
+    
+    print("✓ Added bronze layer metadata columns")
+    print(f"\nTotal columns: {len(df_bronze.columns)}")
+    print(f"\nBronze DataFrame columns:")
+    for col_name in df_bronze.columns:
+        print(f"  • {col_name}")
+    
+    # Show sample with metadata
+    print("\n📊 Sample with Metadata:")
+    display(df_bronze.select(
+        "id", "name", "symbol", "current_price", "market_cap",
+        "batch_id", "bronze_ingestion_timestamp", "source_file"
+    ).limit(5))
+    
+except Exception as e:
+    logger.error(f"Error adding bronze metadata: {str(e)}", exc_info=True)
+    raise
 
 # COMMAND ----------
 
 # DBTITLE 1,Write to Bronze Delta table
-# Create schema if it doesn't exist
-spark.sql("CREATE SCHEMA IF NOT EXISTS main.crypto_bronze")
+logger.info("STEP 5: Writing to Bronze Delta table")
+logger.info("-" * 70)
 
-# Define bronze table
-bronze_table = "main.crypto_bronze.coingecko_market_data"
-
-print(f"Writing to Delta table: {bronze_table}")
-print("=" * 60)
-
-# Write to Delta table with append mode
-df_bronze.write \
-    .format("delta") \
-    .mode("append") \
-    .option("mergeSchema", "true") \
-    .saveAsTable(bronze_table)
-
-record_count = df_bronze.count()
-print(f"\n✓ Successfully wrote {record_count} records to {bronze_table}")
-print(f"\nBatch ID: {metadata['batch_id']}")
-print(f"External Ingestion: {metadata['ingestion_timestamp']}")
-print(f"Bronze Processing: {datetime.now().isoformat()}")
-print("=" * 60)
+try:
+    # Create schema if it doesn't exist
+    logger.info("Ensuring schema exists...")
+    spark.sql("CREATE SCHEMA IF NOT EXISTS main.crypto_bronze")
+    logger.debug("Schema main.crypto_bronze ready")
+    
+    # Define bronze table
+    bronze_table = "main.crypto_bronze.coingecko_market_data"
+    logger.info(f"Target table: {bronze_table}")
+    
+    print(f"Writing to Delta table: {bronze_table}")
+    print("=" * 60)
+    
+    # Count records before write
+    record_count = df_bronze.count()
+    logger.info(f"Writing {record_count} records to Delta table...")
+    
+    # Write to Delta table with append mode
+    logger.debug("Write mode: append, mergeSchema: true")
+    df_bronze.write \
+        .format("delta") \
+        .mode("append") \
+        .option("mergeSchema", "true") \
+        .saveAsTable(bronze_table)
+    
+    logger.info(f"Successfully wrote {record_count} records to {bronze_table}")
+    logger.info(f"Batch ID: {metadata['batch_id']}")
+    logger.debug(f"External ingestion timestamp: {metadata['ingestion_timestamp']}")
+    logger.debug(f"Bronze processing timestamp: {datetime.now().isoformat()}")
+    
+    print(f"\n✓ Successfully wrote {record_count} records to {bronze_table}")
+    print(f"\nBatch ID: {metadata['batch_id']}")
+    print(f"External Ingestion: {metadata['ingestion_timestamp']}")
+    print(f"Bronze Processing: {datetime.now().isoformat()}")
+    print("=" * 60)
+    
+except Exception as e:
+    logger.error(f"Error writing to Bronze table: {str(e)}", exc_info=True)
+    raise
 
 # COMMAND ----------
 
 # DBTITLE 1,Record processed file in control table
-# Record the file as successfully processed in control table
-from pyspark.sql.types import StructType, StructField, StringType, LongType, TimestampType, IntegerType
+logger.info("STEP 6: Recording processed file in control table")
+logger.info("-" * 70)
 
-control_record = [{
-    "file_name": file_name,
-    "file_path": file_path,
-    "file_size": file_size,
-    "file_modification_time": file_mod_time,
-    "processing_timestamp": datetime.now(),
-    "batch_id": metadata['batch_id'],
-    "record_count": len(data_records),
-    "status": "SUCCESS"
-}]
-
-control_schema = StructType([
-    StructField("file_name", StringType(), True),
-    StructField("file_path", StringType(), True),
-    StructField("file_size", LongType(), True),
-    StructField("file_modification_time", TimestampType(), True),
-    StructField("processing_timestamp", TimestampType(), True),
-    StructField("batch_id", StringType(), True),
-    StructField("record_count", IntegerType(), True),
-    StructField("status", StringType(), True)
-])
-
-control_df = spark.createDataFrame(control_record, schema=control_schema)
-
-control_df.write \
-    .format("delta") \
-    .mode("append") \
-    .saveAsTable(control_table)
-
-print("\n" + "=" * 60)
-print("✓ File recorded in control table")
-print(f"  Table: {control_table}")
-print(f"  File: {file_name}")
-print(f"  Status: SUCCESS")
-print("=" * 60)
+try:
+    # Record the file as successfully processed in control table
+    from pyspark.sql.types import StructType, StructField, StringType, LongType, TimestampType, IntegerType
+    
+    logger.info("Creating control record...")
+    control_record = [{
+        "file_name": file_name,
+        "file_path": file_path,
+        "file_size": file_size,
+        "file_modification_time": file_mod_time,
+        "processing_timestamp": datetime.now(),
+        "batch_id": metadata['batch_id'],
+        "record_count": len(data_records),
+        "status": "SUCCESS"
+    }]
+    
+    logger.debug(f"Control record: {control_record[0]}")
+    
+    control_schema = StructType([
+        StructField("file_name", StringType(), True),
+        StructField("file_path", StringType(), True),
+        StructField("file_size", LongType(), True),
+        StructField("file_modification_time", TimestampType(), True),
+        StructField("processing_timestamp", TimestampType(), True),
+        StructField("batch_id", StringType(), True),
+        StructField("record_count", IntegerType(), True),
+        StructField("status", StringType(), True)
+    ])
+    
+    logger.info("Creating control DataFrame...")
+    control_df = spark.createDataFrame(control_record, schema=control_schema)
+    
+    logger.info(f"Writing control record to {control_table}...")
+    control_df.write \
+        .format("delta") \
+        .mode("append") \
+        .saveAsTable(control_table)
+    
+    logger.info(f"File {file_name} recorded in control table with status SUCCESS")
+    logger.debug(f"Batch ID: {metadata['batch_id']}, Record count: {len(data_records)}")
+    
+    print("\n" + "=" * 60)
+    print("✓ File recorded in control table")
+    print(f"  Table: {control_table}")
+    print(f"  File: {file_name}")
+    print(f"  Status: SUCCESS")
+    print("=" * 60)
+    
+except Exception as e:
+    logger.error(f"Error recording file in control table: {str(e)}", exc_info=True)
+    raise
 
 # COMMAND ----------
 
 # DBTITLE 1,Verify Bronze table
-# Verify the data in bronze table
-from pyspark.sql.functions import col, count, max as max_agg, min as min_agg, first
+logger.info("STEP 7: Verifying Bronze table data")
+logger.info("-" * 70)
 
-print("\n🔍 Verifying Bronze Table")
-print("=" * 60)
-
-bronze_table = "main.crypto_bronze.coingecko_market_data"
-df_verify = spark.table(bronze_table)
-
-total_records = df_verify.count()
-latest_batch = df_verify.agg(max_agg("bronze_ingestion_timestamp")).collect()[0][0]
-
-print(f"\nTotal records in Bronze: {total_records:,}")
-print(f"Latest batch processed: {latest_batch}")
-
-# Get batch statistics
-print("\n📊 Batch Summary:")
-df_verify.groupBy("batch_id") \
-    .agg(
-        count("*").alias("record_count"),
-        min_agg("bronze_ingestion_timestamp").alias("processed_at"),
-        first("source_file").alias("source_file")
+try:
+    # Verify the data in bronze table
+    from pyspark.sql.functions import col, count, max as max_agg, min as min_agg, first
+    
+    print("\n🔍 Verifying Bronze Table")
+    print("=" * 60)
+    
+    bronze_table = "main.crypto_bronze.coingecko_market_data"
+    logger.info(f"Querying Bronze table: {bronze_table}")
+    
+    df_verify = spark.table(bronze_table)
+    
+    logger.info("Calculating total record count...")
+    total_records = df_verify.count()
+    logger.info(f"Total records in Bronze table: {total_records:,}")
+    
+    logger.info("Finding latest batch timestamp...")
+    latest_batch = df_verify.agg(max_agg("bronze_ingestion_timestamp")).collect()[0][0]
+    logger.info(f"Latest batch processed at: {latest_batch}")
+    
+    print(f"\nTotal records in Bronze: {total_records:,}")
+    print(f"Latest batch processed: {latest_batch}")
+    
+    # Get batch statistics
+    logger.info("Generating batch summary statistics...")
+    print("\n📊 Batch Summary:")
+    batch_summary = df_verify.groupBy("batch_id") \
+        .agg(
+            count("*").alias("record_count"),
+            min_agg("bronze_ingestion_timestamp").alias("processed_at"),
+            first("source_file").alias("source_file")
+        ) \
+        .orderBy(col("processed_at").desc())
+    
+    batch_count = batch_summary.count()
+    logger.debug(f"Number of unique batches: {batch_count}")
+    
+    batch_summary.show(10, truncate=False)
+    
+    logger.info("Retrieving latest records...")
+    print("\n📊 Latest Records:")
+    df_verify.select(
+        "id", "name", "symbol", 
+        "current_price", "market_cap", "market_cap_rank",
+        "batch_id", "bronze_ingestion_timestamp"
     ) \
-    .orderBy(col("processed_at").desc()) \
+    .orderBy(col("bronze_ingestion_timestamp").desc()) \
     .show(10, truncate=False)
+    
+    logger.info("Bronze table verification completed successfully")
+    
+except Exception as e:
+    logger.error(f"Error verifying Bronze table: {str(e)}", exc_info=True)
+    raise
 
-print("\n📊 Latest Records:")
-df_verify.select(
-    "id", "name", "symbol", 
-    "current_price", "market_cap", "market_cap_rank",
-    "batch_id", "bronze_ingestion_timestamp"
-) \
-.orderBy(col("bronze_ingestion_timestamp").desc()) \
-.show(10, truncate=False)
+# COMMAND ----------
+
+# DBTITLE 1,Pipeline Execution Summary
+logger.info("="*70)
+logger.info("BRONZE LAYER INGESTION - EXECUTION SUMMARY")
+logger.info("="*70)
+
+# Calculate execution time
+pipeline_end_time = datetime.now()
+logger.info(f"Pipeline completed at: {pipeline_end_time.isoformat()}")
+
+# Summary statistics
+logger.info("")
+logger.info("Execution Summary:")
+logger.info(f"  - File processed: {file_name}")
+logger.info(f"  - File size: {file_size:,} bytes")
+logger.info(f"  - Batch ID: {metadata['batch_id']}")
+logger.info(f"  - Records ingested: {len(data_records):,}")
+logger.info(f"  - Target table: {bronze_table}")
+logger.info(f"  - Control table updated: {control_table}")
+logger.info(f"  - Source system: {metadata['source_system']}")
+logger.info(f"  - Target currency: {metadata['target_currency']}")
+logger.info("")
+
+logger.info("✅ Bronze layer ingestion completed successfully!")
+logger.info("="*70)
+
+print("\n" + "="*70)
+print("✅ PIPELINE EXECUTION COMPLETED SUCCESSFULLY")
+print("="*70)
+print(f"\nFile: {file_name}")
+print(f"Records: {len(data_records):,}")
+print(f"Batch ID: {metadata['batch_id']}")
+print(f"Status: SUCCESS")
+print("="*70)
 
 # COMMAND ----------
 
