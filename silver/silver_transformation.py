@@ -1,4 +1,8 @@
 # Databricks notebook source
+# /// script
+# [tool.databricks.environment]
+# environment_version = "5"
+# ///
 # DBTITLE 1,Silver Layer - Data Transformation and Quality
 # MAGIC %md
 # MAGIC # Silver Layer: Data Transformation and Quality
