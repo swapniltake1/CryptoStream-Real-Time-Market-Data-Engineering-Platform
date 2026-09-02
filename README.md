@@ -10,7 +10,8 @@ Professional, production-oriented data engineering platform for ingesting, valid
 
 Table of Contents
 - Project Overview
-- Architecture
+- What's Changed
+- Architecture & Flow diagrams
 - Key Features
 - Data Layers (Medallion)
 - Time-Series & Analytics
@@ -27,7 +28,7 @@ Table of Contents
 
 ## Project Overview
 
-CryptoStream is an enterprise-style, metadata-driven data engineering platform that converts continuous cryptocurrency market feeds into reliable, analytics-ready datasets. It is designed for scalability, observability, and production-grade data governance.
+CryptoStream is an enterprise-style, metadata-driven data engineering platform that converts continuous cryptocurrency market feeds into reliable, analytics-ready datasets. It is designed for scalable, testable, and production-grade deployments on Databricks / Delta Lake or similar Spark-compatible lakehouses.
 
 Primary goals:
 - Ingest market data from CoinGecko reliably
@@ -38,39 +39,101 @@ Primary goals:
 
 ---
 
-## Documentation
+## What's Changed
 
-Comprehensive technical documentation for CryptoStream is available in the `CryptoStream_Documentation/docs/` folder. It contains design, operational, and runbook material that complements the repository code.
+Recent code changes have improved ingestion robustness, made the transformation pipelines more idempotent, and added observability metadata to every pipeline run. Key updates:
+- Improved API client: better retry/backoff and rate-limit handling
+- Standardized ingestion metadata (batch_id, request_id, ingestion_timestamp)
+- Enhanced Silver transformations: stricter schema checks and deterministic business keys
+- MERGE-based upserts for Silver->Gold with transactional guarantees
+- Additional operational metrics emitted for monitoring (records_read, records_processed, pipeline_duration)
 
-Documentation index: https://github.com/swapniltake1/CryptoStream-Real-Time-Market-Data-Engineering-Platform/blob/main/CryptoStream_Documentation/docs/README.md
-
-Direct links to key documents (permalinks):
-
-- [Architecture](https://github.com/swapniltake1/CryptoStream-Real-Time-Market-Data-Engineering-Platform/blob/main/CryptoStream_Documentation/docs/architecture.md)
-- [Data dictionary](https://github.com/swapniltake1/CryptoStream-Real-Time-Market-Data-Engineering-Platform/blob/main/CryptoStream_Documentation/docs/data_dictionary.md)
-- [Pipeline design](https://github.com/swapniltake1/CryptoStream-Real-Time-Market-Data-Engineering-Platform/blob/main/CryptoStream_Documentation/docs/pipeline_design.md)
-- [Data quality](https://github.com/swapniltake1/CryptoStream-Real-Time-Market-Data-Engineering-Platform/blob/main/CryptoStream_Documentation/docs/data_quality.md)
-- [Deployment guide](https://github.com/swapniltake1/CryptoStream-Real-Time-Market-Data-Engineering-Platform/blob/main/CryptoStream_Documentation/docs/deployment_guide.md)
-- [Testing strategy](https://github.com/swapniltake1/CryptoStream-Real-Time-Market-Data-Engineering-Platform/blob/main/CryptoStream_Documentation/docs/testing_strategy.md)
-- [Monitoring & alerting](https://github.com/swapniltake1/CryptoStream-Real-Time-Market-Data-Engineering-Platform/blob/main/CryptoStream_Documentation/docs/monitoring_alerting.md)
-- [Security configuration](https://github.com/swapniltake1/CryptoStream-Real-Time-Market-Data-Engineering-Platform/blob/main/CryptoStream_Documentation/docs/security_configuration.md)
-- [Troubleshooting runbook](https://github.com/swapniltake1/CryptoStream-Real-Time-Market-Data-Engineering-Platform/blob/main/CryptoStream_Documentation/docs/troubleshooting_runbook.md)
-- [Project operations](https://github.com/swapniltake1/CryptoStream-Real-Time-Market-Data-Engineering-Platform/blob/main/CryptoStream_Documentation/docs/project_operations.md)
-- [File tracking mechanism](https://github.com/swapniltake1/CryptoStream-Real-Time-Market-Data-Engineering-Platform/blob/main/CryptoStream_Documentation/docs/file_tracking_mechanism.md)
-
-Published site (after first deploy): https://swapniltake1.github.io/CryptoStream-Real-Time-Market-Data-Engineering-Platform/
+These changes are reflected in the updated pipeline code, tests, and configuration files. Update your `config/` entries and CI if you customized the previous behavior.
 
 ---
 
-## Architecture (High level)
+## Architecture & Flow diagrams
 
-CoinGecko API -> Ingestion Layer (Python) -> Bronze (raw) -> Silver (cleansed) -> Gold (analytics) -> Databricks SQL / Dashboards
+Below are two diagrams to help understand the end-to-end flow and the component architecture. They are provided as mermaid diagrams so you can render them in markdown-aware viewers; if your renderer does not support mermaid, the textual explanation following each diagram describes the same flow.
 
-Key responsibilities by layer:
-- Ingestion: API clients, retries, rate-limit handling, request auditing
-- Bronze: raw payloads, ingestion metadata, batch traceability
-- Silver: schema enforcement, parsing, validation, deduplication
-- Gold: aggregated metrics, trend tables, top movers
+Architecture flow (high-level):
+
+```mermaid
+flowchart LR
+  A[CoinGecko API] -->|HTTP Poll / Batch| B[Ingestion Service]
+  B --> C[Bronze (Delta) - raw_payloads]
+  C --> D[Silver - parsed & validated]
+  D --> E[Gold - analytics & aggregates]
+  E --> F[Databricks SQL / Dashboards]
+  B -->|metrics & logs| G[Monitoring & Alerting]
+  D --> H[Quarantine / Reprocess Queue]
+  style A fill:#f9f,stroke:#333,stroke-width:1px
+  style B fill:#bbf,stroke:#333,stroke-width:1px
+  style C fill:#eee,stroke:#333,stroke-width:1px
+  style D fill:#ffd,stroke:#333,stroke-width:1px
+  style E fill:#dfd,stroke:#333,stroke-width:1px
+  style G fill:#fdd,stroke:#333,stroke-width:1px
+  style H fill:#fcc,stroke:#333,stroke-width:1px
+```
+
+Textual explanation:
+- CoinGecko API: source of market and coin-level JSON payloads.
+- Ingestion Service: Python-based client with configurable retry/backoff, batching, and request auditing. Writes raw responses and ingestion metadata into Bronze.
+- Bronze: Delta tables that preserve raw_payload and ingestion metadata (batch_id, request_timestamp, request_id).
+- Silver: Parsing, schema enforcement, validation rules, and deterministic deduplication using business key (e.g., coin_id + market_timestamp). Invalid or suspicious records are routed to a quarantine table or reprocess queue.
+- Gold: Aggregated, business-ready tables (snapshots, trends, top movers) optimized for Databricks SQL and dashboards.
+- Monitoring & Alerting: captures pipeline metrics and emits alerts for repeated failures or schema drift.
+
+
+Component architecture diagram (detailed):
+
+```mermaid
+flowchart TD
+  subgraph Source
+    API[CoinGecko API]
+  end
+
+  subgraph Ingest
+    Client[Ingestion Service (Python)]
+    Notebook[Optional: Notebook Runner]
+  end
+
+  subgraph Storage
+    Bronze[Bronze (Delta) - raw]
+    Silver[Silver (Delta) - curated]
+    Gold[Gold (Delta) - analytics]
+  end
+
+  subgraph Processing
+    ETL[Batch ETL / Jobs]
+    Streaming[Structured Streaming (future)]
+  end
+
+  subgraph Ops
+    Monitoring[Prometheus / Datadog / Azure Monitor]
+    Alerts[Alerting (PagerDuty / Email)]
+    CI[CI / Tests]
+  end
+
+  API --> Client --> Bronze --> ETL --> Silver --> ETL --> Gold -->|served by| Dash[Databricks SQL / BI]
+  Client --> Monitoring
+  ETL --> Monitoring
+  ETL --> Alerts
+  CI --> ETL
+  Streaming --> Silver
+  Notebook --> Client
+  Dash -->|queries| Gold
+  style Bronze fill:#f3f4f6
+  style Silver fill:#fff7ed
+  style Gold fill:#ecfdf5
+  style Monitoring fill:#fffbeb
+  style CI fill:#eef2ff
+```
+
+Diagram notes:
+- ETL represents scheduled Jobs or Databricks Jobs that perform Silver transformations and Gold aggregations.
+- Streaming is a planned enhancement; current implementation is batch-based but the codebase is organized to allow Structured Streaming in the future.
+- Monitoring integrates with emitted metrics and pipeline logs; alerts are triggered for failed runs or high rejection rates.
 
 ---
 
